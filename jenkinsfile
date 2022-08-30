@@ -6,157 +6,137 @@ pipeline {
     }
 
     environment {
-        AWS_ACCESS_KEY_ID = credentials('awsAccessKeyId')
-        AWS_SECRET_ACCESS_KEY = credentials('awsSecretAccessKey')
-        AWS_DEFAULT_REGION = 'ap-northeast-2'
-        HOME = '.'
+      AWS_ACCESS_KEY_ID = credentials('awsAccessKeyId')
+      AWS_SECRET_ACCESS_KEY = credentials('awsSecretAccessKey')
+      AWS_DEFAULT_REGION = 'ap-northeast-2'
+      HOME = '.' // Avoid npm root owned
     }
 
     stages {
         stage('Prepare') {
             agent any
-
+            
             steps {
-                echo "Lets start Long Journey! ENV: ${ENV}"
-                echo "Clonning Repository"
+                echo 'Clonning Repository'
 
                 git url: 'https://github.com/LMWoo/jenkins.git',
                     branch: 'master',
-                    credentialsId : 'gittest'
+                    credentialsId: 'gittest'
             }
 
             post {
                 success {
-                    echo "Successfully Cloned Repository"
+                    echo 'Successfully Cloned Repository'
                 }
 
                 always {
-                    echo "i tried..."
+                  echo "i tried..."
                 }
 
                 cleanup {
-                    echo "after all other post condition"
+                  echo "after all other post condition"
                 }
             }
         }
-
-        //stage('Only for production') {
-        //    when {
-        //        branch 'production'
-        //        environment name: 'APP_ENV', value: 'prod'
-        //        anyOf {
-        //            environment name: "DEPLOY_TO", value: 'producntion'
-        //            environment name: "DEPLOY_TO", value: 'stagging'
-        //        }
-        //    }
-        //}
-
+        
         stage('Deploy Frontend') {
-            steps {
-                echo 'Deploying Fronted'
-
-                dir ('./website') {
-                    sh '''
-                    aws s3 sync ./ s3://jenkinsminwoo
-                    '''
-                }
+          steps {
+            echo 'Deploying Frontend'
+            dir ('./website'){
+                sh '''
+                aws s3 sync ./ s3://jenkinsminwoo
+                '''
             }
+          }
 
-            post {
+          post {
+              success {
+                  echo 'Successfully Cloned Repository'
 
-                success {
-                    echo 'Successfully Cloned Repository'
 
-                    mail to: 'leemw513@gmail.com'
-                    subject: 'Deploy Frontend Success',
-                    body: 'Successfully deployed frontend!'
-                }
+              }
 
-                failure {
-                    echo 'I failed :('
+              failure {
+                  echo 'I failed :('
 
-                    mail to: 'leemw513@gmail.com'
-                    subject: 'Failed Pipeline',
-                    body: 'Something is wrong with deploy frontend!'
-                }
-            }
+                  
+              }
+          }
         }
-
+        
         stage('Lint Backend') {
             agent {
-                docker {
-                    image 'node:latest'
-                }
+              docker {
+                image 'node:latest'
+              }
             }
-
+            
             steps {
-                dir ('./server') {
-                    sh '''
-                    npm install&& 
-                    npm run lint
-                    '''
-                }
+              dir ('./server'){
+                  sh '''
+                  sudo npm install&&
+                  sudo npm run lint
+                  '''
+              }
             }
         }
-
+        
         stage('Test Backend') {
-            agent {
-                docker {
-                    image 'node:latest'
-                }
+          agent {
+            docker {
+              image 'node:latest'
             }
+          }
+          steps {
+            echo 'Test Backend'
 
-            steps {
-                echo 'Test Backend'
-
-                dir ('./server') {
-                    sh '''
-                    npm install
-                    npm run test
-                    '''
-                }
+            dir ('./server'){
+                sh '''
+                npm install
+                npm run test
+                '''
             }
+          }
         }
+        
+        stage('Bulid Backend') {
+          agent any
+          steps {
+            echo 'Build Backend'
 
-        stage('Build Backend') {
-            agent any
-            steps {
-                echo 'Build Backend'
-
-                dir ('./server') {
-                    sh """
-                    docker build . -t server --build-arg env=${PROD}
-                    """
-                }
+            dir ('./server'){
+                sh """
+                docker build . -t server --build-arg env=test
+                """
             }
+          }
 
-            post {
-                failure {
-                    error "This pipeline stops here..."
-                }
+          post {
+            failure {
+              error 'This pipeline stops here...'
             }
+          }
         }
-
+        
         stage('Deploy Backend') {
-            agent any
+          agent any
 
-            steps {
-                echo 'Build Backend'
+          steps {
+            echo 'Build Backend'
 
-                dir ('./server') {
-                    sh '''
-                    docker run -p 80:80 -d server
-                    '''
-                }
+            dir ('./server'){
+                sh '''
+                docker rm -f $(docker ps -aq)
+                docker run -p 80:80 -d server
+                '''
             }
+          }
 
-            post {
-                success {
-                    mail to : 'leemw513@gmail.com',
-                    subject : 'Deploy Success',
-                    body : 'Successfully deployed!'
-                }
+          post {
+            success {
+              echo 'Post Build Backend'
             }
+          }
         }
     }
 }
